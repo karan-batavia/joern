@@ -2,6 +2,7 @@ package io.joern.rubysrc2cpg.astcreation
 import io.joern.rubysrc2cpg.parser.RubyParser._
 import io.joern.rubysrc2cpg.parser.{RubyLexer, RubyParser}
 import io.joern.rubysrc2cpg.passes.Defines
+import io.joern.rubysrc2cpg.utils.{PackageContext, PackageTable}
 import io.joern.x2cpg.Ast.storeInDiffGraph
 import io.joern.x2cpg.Defines.DynamicCallUnknownFullName
 import io.joern.x2cpg.datastructures.{Global, Scope}
@@ -13,12 +14,13 @@ import org.antlr.v4.runtime.{CharStreams, CommonTokenStream, ParserRuleContext, 
 import org.slf4j.LoggerFactory
 import overflowdb.BatchedUpdate
 
+import java.nio.file.{Files, Paths}
 import java.util
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters._
 
-class AstCreator(filename: String, global: Global)
+class AstCreator(filename: String, global: Global, packageContext: PackageContext)
     extends AstCreatorBase(filename)
     with AstNodeBuilder[ParserRuleContext, AstCreator]
     with AstForPrimitivesCreator
@@ -1117,8 +1119,7 @@ class AstCreator(filename: String, global: Global)
     val column         = localIdentifier.getSymbol().getCharPositionInLine()
     val line           = localIdentifier.getSymbol().getLine()
     val name           = getActualMethodName(localIdentifier.getText)
-    val methodFullName = s"$filename:$name"
-
+    val methodFullName = "<unknownfullname>"
     val callNode = NewCall()
       .name(name)
       .methodFullName(methodFullName)
@@ -1405,6 +1406,7 @@ class AstCreator(filename: String, global: Global)
       .lineNumberEnd(ctx.END().getSymbol.getLine)
       .filename(filename)
     callNode.methodFullName(classPath + callNode.name)
+    packageContext.packageTable.addPackageMethod(packageContext.moduleName, callNode.name, classPath)
 
     val methodRetNode = NewMethodReturn()
       .lineNumber(None)
@@ -1996,23 +1998,16 @@ class AstCreator(filename: String, global: Global)
           callNode.name == "require_once" ||
           callNode.name == "load"
         ) {
-          val literalImports = argsAsts.head.nodes
-            .filter(node => node.isInstanceOf[NewLiteral])
-
-          if (literalImports.size == 1) {
-            val importedFile =
-              literalImports.head
-                .asInstanceOf[NewLiteral]
-                .code
-            println(s"AST to be created for imported file ${importedFile}")
-          } else {
-            println(
-              s"Cannot process import since it is determined on the fly. Just creating a call node for later processing"
-            )
-            Seq(callAst(callNode, argsAsts))
-          }
+          // TODO: Do a proper merge
+          val importedNode =
+            argsAsts.head.nodes.filter(node => node.isInstanceOf[NewLiteral]).head.asInstanceOf[NewLiteral]
+          packageContext.packageTable.addPackageCall(filename, PackageTable.resolveImportPath(importedNode.code))
+          val importNode = NewImport()
+            .code(importedNode.code)
+          Seq(Ast(importNode))
+        } else {
+          Seq(callAst(callNode, argsAsts))
         }
-        Seq(callAst(callNode, argsAsts))
       } else {
         argsAsts
       }

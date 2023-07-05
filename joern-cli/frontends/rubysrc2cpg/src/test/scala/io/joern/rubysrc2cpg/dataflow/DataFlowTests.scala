@@ -1586,7 +1586,7 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
     }
   }
 
-  "Data flow for astForChainedCommandWithDoBlockContext" should {
+  "Data flow for astForChainedCommandWithDoBlockContext without parantheses" should {
     val cpg = code(
       """
         |x=10
@@ -1595,9 +1595,32 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
         |  yield if block_given?
         |end
         |
-        |y = greet "alice" do
+        |y = greet x do
         |    [1,2,3,4,5]
-        |end.sum x
+        |end.sum 2
+        |
+        |puts y
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 2
+    }
+  }
+
+  "Data flow for astForChainedCommandWithDoBlockContext with parantheses" should {
+    val cpg = code(
+      """
+        |x=10
+        |def greet(name)
+        |  puts "Hello, #{name}!"
+        |  yield if block_given?
+        |end
+        |
+        |y = greet x do
+        |    [1,2,3,4,5]
+        |end.sum 2
         |
         |puts y
         |""".stripMargin)
@@ -1631,4 +1654,143 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
       sink.reachableByFlows(source).size shouldBe 2
     }
   }
+
+  "Data flow for ExpressionsAndChainedCommandWithDoBlockArgumentsWithParenthesesContext" ignore {
+    val cpg = code(
+      """
+        |x=10
+        |def foo(x, y)
+        |  return x + y
+        |end
+        |
+        |def bar(y)
+        |  yield
+        |end
+        |
+        |z = foo(x, bar 1 do
+        |  1
+        |end.sum(1))
+        |
+        |puts z
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Data flow for ChainedCommandWithDoBlockOnlyArgumentsWithParenthesesContext" ignore {
+    val cpg = code(
+      """
+        |x=10
+        |def foo(x)
+        |  return x + 10
+        |end
+        |
+        |def bar(y)
+        |  yield
+        |end
+        |
+        |z = foo(bar 1 do
+        |  1
+        |end.sum(1))
+        |
+        |puts z
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 1
+    }
+  }
+
+  "Data flows through range operators" should {
+    val cpg = code(
+      """
+        |x = 10
+        |y=0
+        |for i in 1...10 do
+        |   x += i
+        |   if (x > 10)
+        |     y = x
+        |   end
+        |end
+        |
+        |puts y
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Data flow for ChainedInvocationWithoutArgumentsPrimaryContext" ignore {
+    val cpg = code(
+      """
+        |x=10
+        |def bar(y)
+        |  yield
+        |end
+        |
+        |public def sum
+        |    return 1
+        |end
+        |
+        |puts bar(x) {
+        |    1
+        |}.sum
+        |puts x
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Data flow through unless modifier" should {
+    val cpg = code(
+      """
+        |x = 1
+        |
+        |x += 2 unless x.zero?
+        |    puts(x)
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Data flow through InvocationExpressionOrCommand with EMARK" should {
+    val cpg = code(
+      """
+        |x=12
+        |def woo(x)
+        |    return x == 10
+        |end
+        |
+        |if !woo x
+        |    puts x
+        |else
+        |    puts "No"
+        |end
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+
 }

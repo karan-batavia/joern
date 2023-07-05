@@ -1568,4 +1568,67 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
       }
     }
   }
+
+  "Data flows for pseudo variable identifiers" should {
+    "Data flow for __LINE__ variable identifier" should {
+      val cpg = code(
+        """
+          |x=1
+          |a=x+__LINE__
+          |puts a
+          |""".stripMargin)
+
+      "find flows to the sink" in {
+        val source = cpg.identifier.name("x").l
+        val sink = cpg.call.name("puts").l
+        sink.reachableByFlows(source).size shouldBe 2
+      }
+    }
+  }
+
+  "Data flow for astForChainedCommandWithDoBlockContext" should {
+    val cpg = code(
+      """
+        |x=10
+        |def greet(name)
+        |  puts "Hello, #{name}!"
+        |  yield if block_given?
+        |end
+        |
+        |y = greet "alice" do
+        |    [1,2,3,4,5]
+        |end.sum x
+        |
+        |puts y
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 2
+    }
+  }
+
+  "Data flow for blockAst" should {
+    val cpg = code(
+      """
+        |x=10
+        |def foo(x)
+        |    yield
+        |    return x + 10
+        |end
+        |
+        |y = foo(x) {
+        |    puts "hello"
+        |}
+        |
+        |puts y
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 2
+    }
+  }
 }

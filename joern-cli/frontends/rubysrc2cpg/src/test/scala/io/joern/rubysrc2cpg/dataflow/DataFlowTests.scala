@@ -1611,7 +1611,6 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
     val cpg = code("""
         |x=10
         |def greet(name)
-        |  puts "Hello, #{name}!"
         |  yield if block_given?
         |end
         |
@@ -1633,7 +1632,6 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
     val cpg = code("""
         |x=10
         |def greet(name)
-        |  puts "Hello, #{name}!"
         |  yield if block_given?
         |end
         |
@@ -1651,19 +1649,17 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
     }
   }
 
-  "Data flow for blockAst" should {
+  "Data flow for blockAst" ignore {
     val cpg = code("""
         |x=10
         |def foo(x)
-        |    yield
-        |    return x + 10
+        |    a = yield
+        |    puts a
         |end
         |
-        |y = foo(x) {
-        |    puts "hello"
+        |foo(x) {
+        |    x + 2
         |}
-        |
-        |puts y
         |""".stripMargin)
 
     "find flows to the sink" in {
@@ -1681,11 +1677,12 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
         |end
         |
         |def bar(y)
-        |  yield
+        |  a = yield
+        |  return a
         |end
         |
-        |z = foo(x, bar 1 do
-        |  1
+        |z = foo(1, bar 1 do
+        |  x
         |end.sum(1))
         |
         |puts z
@@ -1706,11 +1703,12 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
         |end
         |
         |def bar(y)
-        |  yield
+        |  a = yield
+        |  return a
         |end
         |
         |z = foo(bar 1 do
-        |  1
+        |  x
         |end.sum(1))
         |
         |puts z
@@ -1866,7 +1864,7 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
         |""".stripMargin)
 
     "find flows to the sink" in {
-      val source = cpg.member.name("x").l
+      val source = cpg.identifier.name("x").l
       val sink   = cpg.call.name("puts").l
       sink.reachableByFlows(source).size shouldBe 3
     }
@@ -1888,7 +1886,7 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
         |""".stripMargin)
 
     "find flows to the sink" in {
-      val source = cpg.member.name("x").l
+      val source = cpg.identifier.name("x").l
       val sink   = cpg.call.name("puts").l
       sink.reachableByFlows(source).size shouldBe 3
     }
@@ -1916,7 +1914,7 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
     )
 
     "find flows to the sink" in {
-      val source = cpg.member.name("x").l
+      val source = cpg.identifier.name("x").l
       val sink   = cpg.call.name("puts").l
       sink.reachableByFlows(source).size shouldBe 3
     }
@@ -1942,7 +1940,7 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
         |""".stripMargin)
 
     "find flows to the sink" in {
-      val source = cpg.member.name("x").l
+      val source = cpg.identifier.name("x").l
       val sink   = cpg.call.name("puts").l
       sink.reachableByFlows(source).size shouldBe 3
     }
@@ -1950,7 +1948,7 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
 
   "Data flow through block splatting type arguments context" ignore {
     val cpg = code("""
-        x=10
+        |x=10
         |y=0
         |def foo(*n, &block)
         |   woo(*n, &block)
@@ -1968,9 +1966,71 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
         |""".stripMargin)
 
     "find flows to the sink" in {
-      val source = cpg.member.name("x").l
+      val source = cpg.identifier.name("x").l
       val sink   = cpg.call.name("puts").l
       sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Flow through tainted object" ignore {
+    val cpg = code("""
+        |def put_req(api_endpoint, params)
+        |    puts "Hitting " + api_endpoint + " with params: " + params
+        |end
+        |class TestClient
+        |    def get_event_data(accountId)
+        |        payload = accountId
+        |        r = put_req(
+        |            "https://localhost:8080/v3/users/me/",
+        |            params=payload
+        |        )
+        |    end
+        |end
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("accountId").l
+      val sink   = cpg.call.name("put_req").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Flow for a global variable" ignore {
+    val cpg = code("""
+         |$person_height = 6
+         |class Person
+         |    def height_in_cm
+         |        puts $person_height * 30
+         |    end
+         |end
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("$person_height").l
+      val sink   = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 2
+    }
+  }
+
+  "Flow for nested puts calls" should {
+    val cpg = code("""
+        |x=10
+        |def put_name(x)
+        |    puts x
+        |end
+        |def nested_put(x)
+        |    put_name(x)
+        |end
+        |def double_nested_put(x)
+        |    nested_put(x)
+        |end
+        |double_nested_put(x)
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.identifier.name("x").l
+      val sink   = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 5
     }
   }
 

@@ -1872,4 +1872,106 @@ class DataFlowTests extends DataFlowCodeToCpgSuite {
     }
   }
 
+  "Data flow through ensureClause" ignore {
+    val cpg = code("""
+        |begin
+        |    x = File.open("myFile.txt", "r")
+        |    x << "#{content} \n"
+        |rescue
+        |  x = "pqr"
+        |ensure
+        |  x = "abc"
+        |  y = x
+        |end
+        |
+        |puts y
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.member.name("x").l
+      val sink   = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Data flow through begin-else" ignore {
+    val cpg = code("""
+        |begin
+        |    x = File.open("myFile.txt", "r")
+        |    x << "#{content} \n"
+        |rescue
+        |  x = "pqr"
+        |else
+        |  y = x
+        |ensure
+        |  x = "abc"
+        |end
+        |
+        |puts y
+        |""".stripMargin).moreCode(
+      """
+        |My file
+        |""".stripMargin,
+      "myFile.txt"
+    )
+
+    "find flows to the sink" in {
+      val source = cpg.member.name("x").l
+      val sink   = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Data flow through block argument context" ignore {
+    val cpg = code("""
+        |x=10
+        |y=0
+        |def foo(n, &block)
+        |   woo(n, &block)
+        |end
+        |
+        |def woo(n, &block)
+        |    n.times {yield}
+        |end
+        |
+        |foo(5) {
+        |    y = x
+        |}
+        |
+        |puts y
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.member.name("x").l
+      val sink   = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
+  "Data flow through block splatting type arguments context" ignore {
+    val cpg = code("""
+        x=10
+        |y=0
+        |def foo(*n, &block)
+        |   woo(*n, &block)
+        |end
+        |
+        |def woo(n, &block)
+        |    n.times {yield}
+        |end
+        |
+        |foo(5) {
+        |    y = x
+        |}
+        |
+        |puts y
+        |""".stripMargin)
+
+    "find flows to the sink" in {
+      val source = cpg.member.name("x").l
+      val sink   = cpg.call.name("puts").l
+      sink.reachableByFlows(source).size shouldBe 3
+    }
+  }
+
 }
